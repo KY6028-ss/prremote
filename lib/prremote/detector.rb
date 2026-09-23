@@ -17,6 +17,27 @@ module Prremote
       new.find_device
     end
 
+    # WSL2 does not forward USB devices to the guest: a board Windows enumerates
+    # correctly still has no /dev/ttyACM* here until usbipd-win attaches it.
+    def self.wsl?
+      return @wsl unless @wsl.nil?
+
+      @wsl = RbConfig::CONFIG['host_os'].match?(/linux/) &&
+             File.file?('/proc/version') &&
+             File.read('/proc/version').downcase.include?('microsoft')
+    rescue SystemCallError
+      @wsl = false
+    end
+
+    # Appended wherever a missing device would otherwise look like a prremote
+    # bug, since under WSL the cause is almost always the missing attach.
+    def self.no_device_hint
+      return nil unless wsl?
+
+      'Running under WSL: attach the board with usbipd-win first — ' \
+        '`usbipd list`, then `usbipd attach --wsl --busid <BUSID>`.'
+    end
+
     def find_device
       candidates = serial_ports
       return candidates.first if candidates.size == 1

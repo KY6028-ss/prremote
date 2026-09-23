@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `install` could not find the BOOTSEL volume on Windows or WSL, so flashing a Pico board timed out with `Timed out waiting for RPI-RP2 volume (60s)` even though the drive was mounted and visible. `Commands::Install#volume_paths` only looked at `/Volumes` (macOS) and the udisks2 mount points (`/run/media/$USER`, `/media/$USER`), neither of which exists on those hosts: Windows mounts the volume on a drive letter, and WSL reaches the same drive through drvfs at `/mnt/<letter>`. The scan now also walks `D:/`–`Z:/` and `/mnt/d`–`/mnt/z`, identifying the board by the `INFO_UF2.TXT` the RP2 bootloader always exposes, because a drive letter carries no volume name to match `RPI-RP2` against. The runtime download path was never affected — only the copy target was. _Verified on Windows 11 + WSL2 (Ubuntu 22.04) against an RP2040 in BOOTSEL mode, where the volume mounts as `D:`._
+- `wait_for_unmount` now waits for `INFO_UF2.TXT` to disappear rather than for the directory itself to go away. Under WSL the `/mnt/<letter>` mount point outlives the drive it pointed at, so the directory check would have reported the board as still present for the full 30 s after a successful write.
+
 ### Added
 
+
 - CI: `.github/workflows/ci.yml` now also builds **all five runtime images on every push/PR** in addition to the gem test matrix (ruby 3.4/4.0) + rubocop it already ran: pico/picow/pico2 with the ARM GNU toolchain action + pico-sdk submodule (toolchain, deps and picotool setup carried over from the retired one-off `build-pico2.yml`, which this supersedes — its trigger branch no longer exists), esp32/esp32c6 inside the `espressif/idf:v5.3.2` container matching the locally installed ESP-IDF. `mrbc` is built from source at pinned mruby 4.0.0 (the same version as the local brew/rbenv toolchain) and shared between jobs as an artifact, so wrapper bytecode no longer depends on whatever mruby a distro ships (a second `mrbc-idf` build inside the IDF container avoids a glibc mismatch there). Pushing a `runtime-X.Y.Z` tag additionally verifies the tag against `VERSION` and **publishes the GitHub release** with all board assets, taking the release notes from the matching CHANGELOG section (auto-generated notes as fallback) — idempotent, so a release that already exists (the `rake release` draft fallback) just gets its assets refreshed. Release steps in `.claude/CLAUDE.md` now go through the tag push; PLAN.md gains the follow-up plan for pull-based on-device smoke testing from an always-on Raspberry Pi.
+
+
+- Windows and WSL are now documented as supported hosts. `detector.rb` already enumerated COM ports through the registry, but the README named only macOS and Linux; the new **Windows and WSL** section covers the drive-letter `--port COM4` form, the usbipd-win attach WSL needs before any board appears as `/dev/ttyACM*`, and the `mount -t drvfs` step `install` needs before a Pico can be flashed from WSL.
+- `prremote list` and ESP32 `install` now point at usbipd-win when they find no device and are running under WSL, where a missing attach — not a missing board — is the usual cause. `Detector.wsl?` detects this from `/proc/version`.
+- CI now runs the test suite on `windows-latest` (Ruby 3.4) alongside the existing Ubuntu matrix, so the platform-specific serial lookup and BOOTSEL scan stay covered.
 
 ## [0.3.2] - 2026-08-25
 

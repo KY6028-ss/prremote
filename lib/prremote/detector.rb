@@ -13,6 +13,12 @@ module Prremote
     }.freeze
     R2P2_VENDOR_IDS = %w[2e8a].freeze # Raspberry Pi USB VID (kept for compat)
 
+    # How far above the tty node the USB device sits is not fixed: ttyUSB
+    # bridges add a level that the native-CDC ttyACM nodes do not, and under
+    # WSL the chain hangs off vhci_hcd rather than a PCI controller. The lookup
+    # walks up until idVendor turns up instead of guessing a depth.
+    SYSFS_WALK_LIMIT = 6
+
     def self.find_device
       new.find_device
     end
@@ -87,13 +93,25 @@ module Prremote
         end
         nil
       when /linux/
-        port_name = File.basename(port)
-        vid_path = "/sys/class/tty/#{port_name}/device/../../../idVendor"
-        return nil unless File.exist?(vid_path)
-
-        vid = File.read(vid_path).strip.downcase
-        KNOWN_VENDORS.dig(vid, :label)
+        vid = linux_vendor_id(port)
+        vid && KNOWN_VENDORS.dig(vid, :label)
       end
+    end
+
+    def linux_vendor_id(port)
+      dir = File.realpath("/sys/class/tty/#{File.basename(port)}/device")
+      SYSFS_WALK_LIMIT.times do
+        vid_path = File.join(dir, 'idVendor')
+        return File.read(vid_path).strip.downcase if File.file?(vid_path)
+
+        parent = File.dirname(dir)
+        break if parent == dir
+
+        dir = parent
+      end
+      nil
+    rescue SystemCallError
+      nil
     end
 
     # Vendor IDs of all connected USB devices as 4-digit hex strings.
